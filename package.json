@@ -1,0 +1,22 @@
+{
+  "name": "identity-reconciliation",
+  "version": "1.0.0",
+  "main": "index.js",
+  "repository": "git@github.com:Hemanth-002/Identity-reconciliation.git",
+  "author": "Hemanth-002 <hemanth.sairam@fullness.io>",
+  "license": "MIT",
+  "scripts": {
+    "start": "ts-node src/index.ts",
+    "dev": "nodemon"
+  },
+  "dependencies": {
+    "@prisma/client": "^5.14.0",
+    "@types/node": "^20.12.12",
+    "prisma": "^5.14.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.4.5"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.0"
+  }
+}
