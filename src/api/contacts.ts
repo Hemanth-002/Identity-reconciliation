@@ -1,37 +1,99 @@
 import { Request, Response } from "express";
+import { Contact } from "@prisma/client";
+import size from "lodash/size";
 import prisma from "../lib/prisma";
+import { getPrimaryContacts, getValidQuery, bundleParams } from "../util/utils";
 
 interface RequestPayload {
   email?: string;
   phoneNumber?: number;
 }
 
+/**
+ * Step 1:  Validate Input Params
+ * Step 2:  Find all contacts with the given email or phone number
+ * Step 3:  Find if same contact Exists
+ * Step 3:  Fiterout All the Primary Contacts and store in primaryContacts array
+ * Step 4:  As we are sorting based on createdAt in the begining the 1st element of primaryContacts array will be PrimaryContact
+ * Step 5:  If there are 2 or more Primary contacts for a particular userInput update all the contacts to secondary while
+ *          Oldest contact remained as “primary”
+ * Step 6:  Create a new secondary contact if new information is presen
+ * Step 7:  Create a primary contact if no contacts are found
+ */
+
 const getConsolidatedContact = async (req: Request, res: Response) => {
   const { email, phoneNumber: mobileNumber }: RequestPayload = req.body;
   const phoneNumber = mobileNumber ? mobileNumber.toString() : null;
 
+  // Step 1:  Validate Input Params
   if (!email && !phoneNumber) {
     return res
       .status(400)
       .json({ error: "Either email or phoneNumber is required" });
   }
 
-  // Find if customer exists or else create a primary customer
-
-  let contacts = await prisma.contact.findMany({
+  // Step 2:  Find all contacts with the given email or phone number
+  const contacts = await prisma.contact.findMany({
     where: {
-      OR: [{ phoneNumber }, { email }],
+      OR: getValidQuery(phoneNumber, email),
     },
     orderBy: {
       createdAt: "asc",
     },
   });
 
-  // Cet the PrimaryContact if contacts are present
   let primaryContact;
-  if (contacts && contacts.length) {
-    primaryContact = contacts.find((e) => e.linkPrecedence === "primary");
+
+  // Step 3:  Find if same contact Exists
+  const similarContact = contacts?.find(
+    (e) => e.email === email && e.phoneNumber === phoneNumber
+  );
+
+  if (size(contacts)) {
+    // Step 4:  As we are sorting based on createdAt in the begining the 1st element of primaryContacts array will be PrimaryContact
+    const primaryContacts = await getPrimaryContacts(contacts);
+    console.log(primaryContacts);
+
+    primaryContact = primaryContacts?.[0] as Contact;
+    /**
+    * Step 5:  If there are 2 or more Primary contacts for a particular userInput update all the contacts to secondary while
+      Oldest contact remained as “primary”
+      */
+    if (primaryContacts && size(primaryContacts) >= 2 && !similarContact) {
+      const x = await prisma.contact.updateMany({
+        where: {
+          OR: getValidQuery(phoneNumber, email),
+          NOT: {
+            id: primaryContact.id,
+          },
+        },
+        data: {
+          linkPrecedence: "secondary",
+          linkedId: primaryContact.id,
+        },
+      });
+      console.log(x);
+    }
+    // Step 6:  Create a new secondary contact if new information is present
+    else if (
+      primaryContacts &&
+      size(primaryContacts) == 1 &&
+      email &&
+      phoneNumber &&
+      !similarContact
+    ) {
+      // create a secondary contact if there was no secondary
+      await prisma.contact.create({
+        data: {
+          email: email,
+          phoneNumber: phoneNumber,
+          linkedId: primaryContacts[0].id,
+          linkPrecedence: "secondary",
+        },
+      });
+    }
   } else {
+    // Step 7:  Create a primary contact if no contacts are found
     primaryContact = await prisma.contact.create({
       data: {
         email: email,
@@ -40,15 +102,32 @@ const getConsolidatedContact = async (req: Request, res: Response) => {
         linkPrecedence: "primary",
       },
     });
-    contacts = [primaryContact];
   }
+
+  // Get all the contacts after all the updation
+  const updatedContacts = await prisma.contact.findMany({
+    where: {
+      linkedId: primaryContact.id,
+    },
+    orderBy: {
+      createdAt: "asc",
+    },
+  });
+
+  // Group all the emails and PhoneNumbers, remove duplicates aswell
+  const emails = bundleParams(primaryContact, updatedContacts, "email");
+  const phoneNumbers = bundleParams(
+    primaryContact,
+    updatedContacts,
+    "phoneNumber"
+  );
 
   const response = {
     contact: {
-      primaryContatctId: primaryContact?.id,
-      emails: contacts.map((c) => c.email).filter((e) => e),
-      phoneNumbers: contacts.map((c) => c.phoneNumber).filter((p) => p),
-      secondaryContactIds: contacts
+      primaryContatctId: primaryContact.id,
+      emails,
+      phoneNumbers,
+      secondaryContactIds: updatedContacts
         .filter((c) => c.linkPrecedence === "secondary")
         .map((c) => c.id),
     },
