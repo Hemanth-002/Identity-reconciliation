@@ -12,3 +12,19 @@ datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
 }
+
+enum LinkPrecedence {
+  secondary
+  primary
+}
+
+model Contact {
+	id                   Int       @id @default(autoincrement())       
+  phoneNumber          String?
+  email                String?
+  linkedId             Int? // the ID of another Contact linked to this one
+  linkPrecedence       LinkPrecedence // "primary" if it's the first Contact in the link
+  createdAt            DateTime   @default(now())          
+  updatedAt            DateTime   @updatedAt         
+  deletedAt            DateTime?
+}
