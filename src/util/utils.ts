@@ -39,9 +39,12 @@ export const bundleParams = (
   key: "phoneNumber" | "email"
 ) => {
   return [
-    primaryValue?.[key],
+    primaryValue[key],
     ...contacts
       .map((contact) => contact[key])
-      .filter((value, index, self) => value && self.indexOf(value) === index),
+      .filter(
+        (value, index, self) =>
+          value && value != primaryValue[key] && self.indexOf(value) === index
+      ),
   ].filter(Boolean);
 };
